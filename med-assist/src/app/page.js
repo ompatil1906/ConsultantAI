@@ -57,8 +57,8 @@ export default function Home() {
       });
 
       vapiInstance.on("error", (e) => {
+        console.error("Vapi Diagnostic Error [Full]:", JSON.stringify(e, Object.getOwnPropertyNames(e)));
         const errMsg = e.message || "A transport error occurred during the voice session.";
-        console.error("Vapi Diagnostic Error:", e.error || e.message || e);
         setErrorMsg(`Voice Link Error: ${errMsg}`);
         setVapiActive(false);
         setCallStatus("error");
@@ -66,10 +66,9 @@ export default function Home() {
     }
 
     return () => {
-      // Don't destroy instance, but stop calls on cleanup
-      if (vapiRef.current) {
-        vapiRef.current.stop();
-      }
+      // In development, aggressive cleanup can cause 'ejection' errors on hot reload.
+      // We will rely on manual stopping or the call-end event.
+      // vapiRef.current?.stop(); 
     };
   }, [vapiPublicKey]);
 
@@ -89,42 +88,15 @@ export default function Home() {
     setErrorMsg(null);
 
     try {
-      console.log("Establishing secure clinical link with ID:", vapiAssistantId);
+      console.log("Establishing clinical link with ID:", vapiAssistantId);
 
-      const assistantOverrides = {
-        name: "Dr. Miller - MedAssist Lead",
-        firstMessage: "Hello, I'm Dr. Miller with MedAssist. I see you're looking for a clinical consultation. Before we begin, I should mention I provide informational guidance, not a formal diagnosis. Shall we start by going over your symptoms?",
-        transcribingEnabled: true,
-        recordingEnabled: true,
-        fillerInjectionEnabled: true,
-        model: {
-          provider: "openai",
-          model: "gpt-4o",
-          systemPrompt: `You are Dr. Miller, a senior medical consultant. You are calm, empathetic, and highly professional.
-          
-          STYLE GUIDELINES:
-          1. EMPATHY FIRST: If a user describes pain or distress, acknowledge it immediately with phrases like "I'm sorry you're dealing with that" or "That sounds quite uncomfortable."
-          2. ONE QUESTION AT A TIME: Never ask multiple questions. Ask one, wait for the verbal response, and acknowledge it before moving on.
-          3. VERBAL NODS: Use natural verbal nods like "I see," "Got it," or "Mhmm" to show you are listening.
-          4. CONVERSATIONAL TURN-TAKING: Keep your responses short (under 20 words) to minimize latency and keep the conversation fluid.
-          5. NO JARGON: Use plain, clear English. Instead of "erythema," say "redness."
-          
-          CONSULTATION PROTOCOL:
-          - Confirm consent to proceed.
-          - Ask for Age and Gender.
-          - Identify the primary symptom.
-          - Gauge severity (1-10) and duration.
-          - Check for "Red Flags" (Chest pain, breathing issues). If detected, advise immediate emergency care and stop the interview.
-          - Provide a structured "Clinical Impression" at the end, but explicitly state it is not a diagnosis.`,
-        }
-      };
-
-      await new Promise(r => setTimeout(r, 100));
-      await vapiRef.current.start(vapiAssistantId, assistantOverrides);
+      // Simple, stable start call
+      await new Promise(r => setTimeout(r, 200));
+      await vapiRef.current.start(vapiAssistantId);
     } catch (e) {
-      console.error("Critical Call Failure:", e);
+      console.error("Vapi Start Failure:", JSON.stringify(e, Object.getOwnPropertyNames(e)));
       setCallStatus("error");
-      setErrorMsg("Connection Failed: " + (e.message || "Internal transport error"));
+      setErrorMsg("Connection Failed: " + (e.message || "The assistant could not be reached. Please check your dashboard connectivity."));
       setVapiActive(false);
     }
   };
@@ -194,8 +166,12 @@ export default function Home() {
 
   const restartSession = () => {
     if (vapiActive) stopVapiCall();
-    const greeting = "New consultation started. Please provide the patient's primary symptoms, age, and gender to begin.";
-    setMessages([{ role: 'model', content: greeting }]);
+    setSessionStarted(false);
+    setCallStatus("inactive");
+    setErrorMsg(null);
+    setMessages([
+      { role: 'model', content: "Hello! I am MedAssist AI, your advanced health assistant.\n\nPlease note that the guidance I provide is strictly informational and is **not a replacement for professional medical advice, diagnosis, or treatment from a licensed physician**. In the event of a medical emergency, please contact your local emergency services immediately.\n\nDo I have your consent to proceed with a few questions so I can better understand and assist you today?" }
+    ]);
   };
 
   return (
@@ -340,8 +316,12 @@ export default function Home() {
               className="premium-button"
               disabled={callStatus === "connecting"}
               onClick={() => {
-                if (isVoiceMode) startVapiCall();
-                else setSessionStarted(true);
+                if (isVoiceMode) {
+                  startVapiCall();
+                } else {
+                  setSessionStarted(true);
+                  setCallStatus("active");
+                }
               }}
               style={{ padding: '20px 48px', fontSize: '1.25rem', borderRadius: '24px', boxShadow: '0 20px 40px rgba(15, 23, 42, 0.15)', transition: 'all 0.4s ease' }}
             >
